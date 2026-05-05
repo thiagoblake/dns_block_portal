@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# DNS Block Portal — worker (FreeBSD)
+# Instalação:
+#   sudo install -m 0555 freebsd-rc.d-dnsblock_worker /usr/local/etc/rc.d/dnsblock_worker
+#   echo 'dnsblock_worker_enable="YES"' | sudo tee -a /etc/rc.conf
+#   sudo service dnsblock_worker start
+#
+# Variáveis: /usr/local/etc/dnsblock-worker.env (chmod 600)
+# Binário:   /usr/local/bin/dnsblock-worker
+#
+
+# PROVIDE: dnsblock_worker
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name=dnsblock_worker
+rcvar=dnsblock_worker_enable
+desc="DNS Block Portal worker"
+
+load_rc_config "$name"
+: "${dnsblock_worker_enable:=NO}"
+
+pidfile="/var/run/${name}.pid"
+command="/usr/local/bin/dnsblock-worker"
+dnsblock_worker_env="/usr/local/etc/dnsblock-worker.env"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+
+dnsblock_worker_start()
+{
+	if [ ! -r "$dnsblock_worker_env" ]; then
+		err 1 "cannot read ${dnsblock_worker_env}"
+	fi
+	if [ ! -x "$command" ]; then
+		err 1 "missing or not executable: ${command}"
+	fi
+	/usr/sbin/daemon -f -p "${pidfile}" /bin/sh -c "set -a; . '${dnsblock_worker_env}'; set +a; exec '${command}'"
+}
+
+dnsblock_worker_stop()
+{
+	if [ ! -f "${pidfile}" ]; then
+		return 0
+	fi
+	p=$(cat "${pidfile}")
+	kill "${p}" 2>/dev/null || true
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "${p}" 2>/dev/null || break
+		sleep 1
+	done
+	rm -f "${pidfile}"
+}
+
+run_rc_command "$1"
