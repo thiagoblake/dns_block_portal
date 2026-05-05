@@ -1,0 +1,13 @@
+node_modules
+.next
+dist
+bin
+tmp
+*.log
+.env
+.DS_Store
+coverage
+apps/web/.next
+apps/web/node_modules
+apps/api/tmp
+apps/worker/tmp

@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dnsblock-postgres
+    environment:
+      POSTGRES_USER: dnsblock
+      POSTGRES_PASSWORD: dnsblock_password
+      POSTGRES_DB: dnsblock
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dnsblock -d dnsblock"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    container_name: dnsblock-api
+    env_file:
+      - ../.env.example
+    environment:
+      APP_PORT: 8080
+      DATABASE_URL: postgres://dnsblock:dnsblock_password@postgres:5432/dnsblock?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - unbound_generated:/etc/unbound/blocklists/generated
+
+  worker:
+    build:
+      context: ../apps/worker
+      dockerfile: Dockerfile
+    container_name: dnsblock-worker
+    env_file:
+      - ../.env.example
+    environment:
+      DATABASE_URL: postgres://dnsblock:dnsblock_password@postgres:5432/dnsblock?sslmode=disable
+      WORKER_INTERVAL_SECONDS: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - unbound_generated:/etc/unbound/blocklists/generated
+
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+    container_name: dnsblock-web
+    env_file:
+      - ../.env.example
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  unbound_generated:
