@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, type User } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type DashboardData = {
   total_lists: number;
@@ -19,13 +20,19 @@ type DashboardData = {
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiRequest<DashboardData>("/api/dashboard")
-      .then(setData)
+    Promise.all([apiRequest<DashboardData>("/api/dashboard"), apiRequest<User>("/api/auth/me")])
+      .then(([dashboard, me]) => {
+        setData(dashboard);
+        setUser(me);
+      })
       .catch((err) => setError(err.message));
   }, []);
+
+  const isAdmin = user?.role === "ADMIN";
 
   return (
     <AppShell>
@@ -44,13 +51,29 @@ export default function DashboardPage() {
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Metric title="Total de listas" value={data.total_lists} />
-              <Metric title="Pendentes de aprovação" value={data.pending_approval} accent="amber" />
+              <Metric
+                title="Pendentes de aprovação"
+                value={data.pending_approval}
+                accent="amber"
+                href="/block-lists?status=PENDING_APPROVAL"
+              />
               <Metric title="Aprovadas (aguardando DNS)" value={data.approved_lists} accent="blue" />
               <Metric title="Aplicadas no DNS" value={data.applied_lists} accent="emerald" />
               <Metric title="Revogadas" value={data.revoked_lists} />
               <Metric title="Expiradas" value={data.expired_lists} />
               <Metric title="Domínios ativos bloqueados" value={data.total_domains} accent="slate" />
             </div>
+
+            {isAdmin && data.pending_approval > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                Há <strong>{data.pending_approval.toLocaleString("pt-BR")}</strong> lista(s) aguardando aprovação.{" "}
+                <Link href="/block-lists?status=PENDING_APPROVAL" className="font-semibold text-amber-900 underline">
+                  Ver pendentes
+                </Link>
+                {" — "}
+                administradores podem excluir rascunhos e pendentes antes da aprovação.
+              </div>
+            )}
 
             <Card>
               <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
@@ -78,11 +101,13 @@ export default function DashboardPage() {
 function Metric({
   title,
   value,
-  accent
+  accent,
+  href
 }: {
   title: string;
   value: number;
   accent?: "amber" | "blue" | "emerald" | "slate";
+  href?: string;
 }) {
   const ring =
     accent === "amber"
@@ -94,12 +119,31 @@ function Metric({
           : accent === "slate"
             ? "border-slate-200 bg-slate-50"
             : "border-slate-200 bg-white";
+
+  const inner = (
+    <>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">{value}</p>
+      {href && value > 0 && (
+        <p className="mt-2 text-xs font-medium text-blue-700">Ver detalhes →</p>
+      )}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={cn("block rounded-xl border transition hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500", ring)}
+      >
+        <div className="py-5 px-6">{inner}</div>
+      </Link>
+    );
+  }
+
   return (
     <Card className={ring}>
-      <CardContent className="py-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
-        <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">{value}</p>
-      </CardContent>
+      <CardContent className="py-5">{inner}</CardContent>
     </Card>
   );
 }

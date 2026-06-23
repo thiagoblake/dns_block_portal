@@ -457,11 +457,50 @@ func (h *Handler) UpdateBlockList(c *gin.Context) {
 
 func (h *Handler) DeleteBlockList(c *gin.Context) {
 	actor, _ := userContext(c)
-	if err := h.DB.Delete(&models.BlockList{}, "id = ?", c.Param("id")).Error; err != nil {
+	id := c.Param("id")
+
+	var list models.BlockList
+	if err := h.DB.First(&list, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "block list not found"})
+		return
+	}
+	if !isBlockListDeletable(list.Status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only DRAFT or PENDING_APPROVAL lists can be deleted"})
+		return
+	}
+
+	old := list
+	tx := h.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error.Error()})
+		return
+	}
+	if err := tx.Where("block_list_id = ?", id).Delete(&models.RevocationRequest{}).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	services.Audit(h.DB, c, actor, "BLOCK_LIST_DELETED", "block_lists", nil, nil, gin.H{"id": c.Param("id")})
+	if err := tx.Where("block_list_id = ?", id).Delete(&models.BlockedDomain{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := tx.Where("block_list_id = ?", id).Delete(&models.UploadedFile{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := tx.Delete(&list).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	services.Audit(h.DB, c, actor, "BLOCK_LIST_DELETED", "block_lists", &list.ID, old, nil)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -1132,6 +1171,10 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	})
 }
 
+func isBlockListDeletable(status models.BlockListStatus) bool {
+	return status == models.StatusDraft || status == models.StatusPendingApproval
+}
+
 func isTransitionAllowed(current, target models.BlockListStatus) bool {
 	allowed := map[models.BlockListStatus][]models.BlockListStatus{
 		models.StatusDraft:           {models.StatusPendingApproval},
@@ -1246,16 +1289,18 @@ func readAndHash(file multipart.File) ([]byte, string, error) {
 }
 
 func parseUploadedValues(filename string, data []byte) ([]string, error) {
+	data = services.StripUTF8BOMFromBytes(data)
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".txt":
 		lines := strings.Split(string(data), "\n")
 		out := make([]string, 0, len(lines))
 		for _, line := range lines {
-			if strings.TrimSpace(line) == "" {
+			line = services.StripInvisibleRunes(strings.TrimSpace(line))
+			if line == "" {
 				continue
 			}
-			out = append(out, strings.TrimSpace(line))
+			out = append(out, line)
 		}
 		return out, nil
 	case ".csv":
@@ -1268,7 +1313,7 @@ func parseUploadedValues(filename string, data []byte) ([]string, error) {
 			return nil, errors.New("empty csv")
 		}
 		start := 0
-		if len(rows[0]) > 0 && strings.EqualFold(strings.TrimSpace(rows[0][0]), "domain") {
+		if len(rows[0]) > 0 && strings.EqualFold(services.StripInvisibleRunes(strings.TrimSpace(rows[0][0])), "domain") {
 			start = 1
 		}
 		out := make([]string, 0, len(rows)-start)
@@ -1276,7 +1321,7 @@ func parseUploadedValues(filename string, data []byte) ([]string, error) {
 			if len(rows[i]) == 0 {
 				continue
 			}
-			value := strings.TrimSpace(rows[i][0])
+			value := services.StripInvisibleRunes(strings.TrimSpace(rows[i][0]))
 			if value != "" {
 				out = append(out, value)
 			}

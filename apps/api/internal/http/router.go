@@ -55,7 +55,6 @@ func NewRouter(handler *handlers.Handler, frontendURL, jwtSecret string) *gin.En
 			{
 				write.POST("", handler.CreateBlockList)
 				write.PUT("/:id", handler.UpdateBlockList)
-				write.DELETE("/:id", handler.DeleteBlockList)
 				write.POST("/:id/submit", handler.SubmitBlockList)
 				write.POST("/:id/revoke-requests", handler.CreateListRevocationRequest)
 				write.POST("/:id/domains", handler.AddDomain)
@@ -67,6 +66,7 @@ func NewRouter(handler *handlers.Handler, frontendURL, jwtSecret string) *gin.En
 			admin := blockLists.Group("")
 			admin.Use(middleware.RequireRoles(models.RoleAdmin))
 			{
+				admin.DELETE("/:id", handler.DeleteBlockList)
 				admin.POST("/:id/approve", handler.ApproveBlockList)
 				admin.POST("/:id/revoke", handler.RevokeBlockList)
 				admin.POST("/:id/apply", handler.ApplyBlockList)

@@ -10,7 +10,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, type User } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const createSchema = z.object({
@@ -57,6 +57,31 @@ const FORM_DEFAULTS: CreateForm = {
   expires_at: ""
 };
 
+function statusLabel(status: string) {
+  switch (status) {
+    case "DRAFT":
+      return "Rascunho";
+    case "PENDING_APPROVAL":
+      return "Pendente aprovação";
+    case "APPROVED":
+      return "Aprovada";
+    case "APPLIED":
+      return "Aplicada";
+    case "REVOKED":
+      return "Revogada";
+    case "EXPIRED":
+      return "Expirada";
+    case "FAILED":
+      return "Falhou";
+    default:
+      return status;
+  }
+}
+
+function canDeleteList(status: string) {
+  return status === "DRAFT" || status === "PENDING_APPROVAL";
+}
+
 function statusStyle(status: string) {
   switch (status) {
     case "APPLIED":
@@ -101,6 +126,7 @@ function buildListQuery(params: {
 }
 
 export default function BlockListsPage() {
+  const [user, setUser] = useState<User | null>(null);
   const [data, setData] = useState<BlockListsPageResponse | null>(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<(typeof PER_PAGE_OPTIONS)[number]>(10);
@@ -115,6 +141,10 @@ export default function BlockListsPage() {
   const [dnsActionFilter, setDnsActionFilter] = useState("");
   const [message, setMessage] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const isAdmin = user?.role === "ADMIN";
+  const pendingHighlight = statusFilter === "PENDING_APPROVAL";
 
   const {
     register,
@@ -128,6 +158,18 @@ export default function BlockListsPage() {
   });
 
   const action = watch("dns_action");
+
+  useEffect(() => {
+    apiRequest<User>("/api/auth/me")
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const st = params.get("status");
+    if (st) setStatusFilter(st);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -230,6 +272,27 @@ export default function BlockListsPage() {
     await load();
   };
 
+  const onDelete = async (list: BlockList) => {
+    if (!canDeleteList(list.status)) return;
+    if (
+      !window.confirm(
+        `Excluir a lista "${list.title}"? Esta ação remove domínios e uploads associados. Não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(list.id);
+    try {
+      await apiRequest(`/api/block-lists/${list.id}`, { method: "DELETE" });
+      setMessage(`Lista "${list.title}" excluída.`);
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Falha ao excluir lista.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const lists = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPagesSafe = Math.max(1, data?.total_pages ?? 1);
@@ -254,6 +317,12 @@ export default function BlockListsPage() {
 
         {message && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{message}</div>
+        )}
+        {isAdmin && pendingHighlight && total > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <strong>{total.toLocaleString("pt-BR")}</strong> lista(s) aguardando aprovação. Rascunhos e pendentes podem
+            ser <strong>excluídos</strong> por administradores antes da aprovação.
+          </div>
         )}
         {data?.domain_hint && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">{data.domain_hint}</div>
@@ -421,14 +490,28 @@ export default function BlockListsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", statusStyle(list.status))}>
-                          {list.status}
+                          {statusLabel(list.status)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-700">{list.dns_action}</td>
                       <td className="px-4 py-3 text-right">
-                        <Link href={`/block-lists/${list.id}`} className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                          Abrir
-                        </Link>
+                        <div className="flex items-center justify-end gap-3">
+                          {isAdmin && canDeleteList(list.status) && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="border-rose-200 text-rose-800 hover:bg-rose-50"
+                              disabled={deletingId === list.id}
+                              onClick={() => onDelete(list)}
+                            >
+                              {deletingId === list.id ? "Excluindo…" : "Excluir"}
+                            </Button>
+                          )}
+                          <Link href={`/block-lists/${list.id}`} className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                            Abrir
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -174,15 +175,17 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 		}
 	}
 
-	tmpPath := filepath.Join(generatedDir, "dns-block-portal.tmp.conf")
+	tmpPath := filepath.Join(generatedDir, "dns-block-portal.tmp")
 	currentPath := filepath.Join(generatedDir, currentFile)
 	backupPath := filepath.Join(generatedDir, "dns-block-portal-"+time.Now().Format("20060102-150405")+".conf")
 
-	if err := os.WriteFile(tmpPath, []byte(builder.String()), 0o644); err != nil {
+	if err := writeConfigFile(tmpPath, []byte(builder.String())); err != nil {
 		return "", "", "", err
 	}
 
+	hasCurrent := false
 	if _, err := os.Stat(currentPath); err == nil {
+		hasCurrent = true
 		if err := copyFile(currentPath, backupPath); err != nil {
 			return "", "", "", err
 		}
@@ -195,14 +198,21 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 		return currentPath, backupPath, "mock mode: validate/reload simulated", nil
 	}
 
+	if err := os.Rename(tmpPath, currentPath); err != nil {
+		return "", "", "", err
+	}
+
 	check := exec.Command(checkconfBin, configPath)
 	checkOut, err := check.CombinedOutput()
 	if err != nil {
+		if hasCurrent {
+			_ = copyFile(backupPath, currentPath)
+		} else {
+			_ = os.Remove(currentPath)
+		}
 		return "", backupPath, string(checkOut), fmt.Errorf("unbound-checkconf failed: %w", err)
 	}
-	if err := os.Rename(tmpPath, currentPath); err != nil {
-		return "", backupPath, string(checkOut), err
-	}
+
 	reload := exec.Command(controlBin, "reload")
 	reloadOut, err := reload.CombinedOutput()
 	if err != nil {
@@ -211,12 +221,33 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 	return currentPath, backupPath, string(reloadOut), nil
 }
 
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+func stripUTF8BOM(content []byte) []byte {
+	return bytes.TrimPrefix(content, utf8BOM)
+}
+
+func writeConfigFile(path string, content []byte) error {
+	content = stripUTF8BOM(content)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return err
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if bytes.HasPrefix(written, utf8BOM) {
+		return fmt.Errorf("config file contains UTF-8 BOM after write: %s", path)
+	}
+	return nil
+}
+
 func copyFile(src, dst string) error {
 	content, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, content, 0o644)
+	return writeConfigFile(dst, content)
 }
 
 func env(key, fallback string) string {

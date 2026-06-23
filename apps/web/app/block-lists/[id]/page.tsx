@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -124,8 +124,13 @@ function TramitationTimeline({ list }: { list: BlockList }) {
   );
 }
 
+function canDeleteList(status: string) {
+  return status === "DRAFT" || status === "PENDING_APPROVAL";
+}
+
 export default function BlockListDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [user, setUser] = useState<User | null>(null);
@@ -147,6 +152,7 @@ export default function BlockListDetailPage() {
   const [bulkPreview, setBulkPreview] = useState<Record<string, unknown> | null>(null);
   const [listRevokeReason, setListRevokeReason] = useState("");
   const [domainRevoke, setDomainRevoke] = useState<{ id: string; reason: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadFileName, setUploadFileName] = useState<string | null>(null);
   const [uploadChoice, setUploadChoice] = useState<{ file: File } | null>(null);
@@ -220,6 +226,25 @@ export default function BlockListDetailPage() {
   };
 
   const isAdmin = user?.role === "ADMIN";
+
+  const onDeleteList = async () => {
+    if (!list || !canDeleteList(list.status)) return;
+    if (
+      !window.confirm(
+        `Excluir a lista "${list.title}"? Domínios e uploads serão removidos. Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await apiRequest(`/api/block-lists/${id}`, { method: "DELETE" });
+      router.push("/block-lists?status=PENDING_APPROVAL");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Falha ao excluir lista.");
+      setDeleting(false);
+    }
+  };
 
   const runTransition = async (path: "submit" | "approve" | "apply" | "revoke") => {
     const body =
@@ -348,6 +373,7 @@ export default function BlockListDetailPage() {
   const canQuickApply = isAdmin && list.status === "APPROVED";
   const canReplaceUpload =
     isAdmin || list.status === "DRAFT" || list.status === "PENDING_APPROVAL";
+  const canDelete = isAdmin && canDeleteList(list.status);
 
   return (
     <AppShell>
@@ -743,6 +769,17 @@ export default function BlockListDetailPage() {
                       Revogar lista (admin, imediato)
                     </Button>
                   </>
+                )}
+                {canDelete && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="justify-start border-rose-300 text-rose-900 hover:bg-rose-50"
+                    disabled={deleting}
+                    onClick={onDeleteList}
+                  >
+                    {deleting ? "Excluindo…" : "Excluir lista (rascunho/pendente)"}
+                  </Button>
                 )}
               </CardContent>
             </Card>

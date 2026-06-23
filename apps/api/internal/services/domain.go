@@ -19,7 +19,7 @@ type NormalizeResult struct {
 }
 
 func NormalizeDomain(input string) (string, string) {
-	value := strings.TrimSpace(strings.ToLower(input))
+	value := StripInvisibleRunes(strings.TrimSpace(strings.ToLower(input)))
 	if value == "" {
 		return "", "empty domain"
 	}

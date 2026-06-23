@@ -109,6 +109,8 @@ include: "/etc/unbound/blocklists/generated/*.conf"
 ```
 
 ## Arquivo de configuracao gerado
+Os arquivos `.conf` sao gravados em **UTF-8 sem BOM**. O Unbound nao aceita BOM (`EF BB BF`) no inicio do arquivo; o worker remove BOM automaticamente antes de gravar e valida o conteudo apos a escrita.
+
 Exemplos:
 ```conf
 local-zone: "dominio.com." always_nxdomain
@@ -116,6 +118,34 @@ local-zone: "dominio.com." always_null
 local-zone: "dominio.com." refuse
 local-zone: "dominio.com." redirect
 local-data: "dominio.com. A 10.10.10.10"
+```
+
+Uploads `.txt`/`.csv` com BOM (comum em Excel) sao sanitizados na API antes de normalizar dominios.
+
+## Deploy do worker (FreeBSD / OPNsense)
+Binario pre-compilado: `apps/worker/dist/dnsblock-worker-freebsd-amd64`
+
+```bash
+# No servidor DNS (como root)
+service dnsblock_worker stop
+install -m 0555 dnsblock-worker-freebsd-amd64 /usr/local/bin/dnsblock-worker
+service dnsblock_worker start
+```
+
+Recompilar localmente:
+```bash
+cd apps/worker && ./scripts/build-freebsd-amd64.sh
+```
+
+Migracao de dados (rodar uma vez no Postgres apos atualizar a API):
+```bash
+psql "$DATABASE_URL" -f apps/api/migrations/004_strip_domain_invisible_chars.sql
+```
+
+Correcao pontual de `.conf` ja gravado com BOM no disco:
+```bash
+sed -i '' '1s/^\xEF\xBB\xBF//' /caminho/para/arquivo.conf
+unbound-checkconf /usr/local/etc/unbound/unbound.conf && unbound-control reload
 ```
 
 ## Variaveis de ambiente
