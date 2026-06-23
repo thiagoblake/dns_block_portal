@@ -122,6 +122,10 @@ local-data: "dominio.com. A 10.10.10.10"
 
 Uploads `.txt`/`.csv` com BOM (comum em Excel) sao sanitizados na API antes de normalizar dominios.
 
+O worker **deduplica** dominios entre listas (primeira ocorrencia vence) e ignora entradas invalidas. Backups vao para `UNBOUND_BACKUP_DIR` (padrao: diretorio irmao `backups/`), **fora** do `include: *.conf`, para evitar avisos `duplicate local-zone`.
+
+**Importante:** nao deixe arquivos `dns-block-portal-20*.conf` dentro de `conf.d/` — o Unbound carrega todos os `*.conf` e gera duplicatas/falhas.
+
 ## Deploy do worker (FreeBSD / OPNsense)
 Binario pre-compilado: `apps/worker/dist/dnsblock-worker-freebsd-amd64`
 
@@ -140,6 +144,13 @@ cd apps/worker && ./scripts/build-freebsd-amd64.sh
 Migracao de dados (rodar uma vez no Postgres apos atualizar a API):
 ```bash
 psql "$DATABASE_URL" -f apps/api/migrations/004_strip_domain_invisible_chars.sql
+psql "$DATABASE_URL" -f apps/api/migrations/005_mark_invalid_normalized_domains.sql
+```
+
+Limpar backups antigos erroneamente em `conf.d` (FreeBSD):
+```bash
+ls /usr/local/etc/unbound/conf.d/
+rm -f /usr/local/etc/unbound/conf.d/dns-block-portal-20*.conf   # nao apague o arquivo ativo da lista
 ```
 
 Correcao pontual de `.conf` ja gravado com BOM no disco:

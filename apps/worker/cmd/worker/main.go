@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -143,7 +145,7 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 	}
 
 	var lists []BlockList
-	if err := db.Where("status IN ?", []string{"APPROVED", "APPLIED"}).Find(&lists).Error; err != nil {
+	if err := db.Where("status IN ?", []string{"APPROVED", "APPLIED"}).Order("created_at asc").Find(&lists).Error; err != nil {
 		return "", "", "", err
 	}
 
@@ -151,6 +153,9 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 	builder.WriteString("# Arquivo gerado automaticamente pelo DNS Block Portal\n")
 	builder.WriteString("# Nao editar manualmente\n")
 	builder.WriteString("# Gerado em: " + time.Now().Format("2006-01-02 15:04:05") + "\n\n")
+
+	seenZones := make(map[string]struct{})
+	var emitted, dupSkipped, invalidSkipped int
 
 	for _, list := range lists {
 		if list.ExpiresAt != nil && list.ExpiresAt.Before(time.Now()) {
@@ -161,23 +166,42 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 			return "", "", "", err
 		}
 		for _, domain := range domains {
-			switch list.DNSAction {
-			case "ALWAYS_NXDOMAIN":
-				builder.WriteString(fmt.Sprintf("local-zone: \"%s\" always_nxdomain\n", domain.NormalizedDomain))
-			case "ALWAYS_NULL":
-				builder.WriteString(fmt.Sprintf("local-zone: \"%s\" always_null\n", domain.NormalizedDomain))
-			case "REFUSE":
-				builder.WriteString(fmt.Sprintf("local-zone: \"%s\" refuse\n", domain.NormalizedDomain))
-			case "REDIRECT":
-				builder.WriteString(fmt.Sprintf("local-zone: \"%s\" redirect\n", domain.NormalizedDomain))
-				builder.WriteString(fmt.Sprintf("local-data: \"%s A %s\"\n", domain.NormalizedDomain, list.RedirectIP))
+			zone := sanitizeUnboundZoneName(domain.NormalizedDomain)
+			if zone == "" {
+				invalidSkipped++
+				continue
 			}
+			key := strings.ToLower(zone)
+			if _, exists := seenZones[key]; exists {
+				dupSkipped++
+				continue
+			}
+			seenZones[key] = struct{}{}
+
+			lines, ok := unboundLinesForZone(zone, list.DNSAction, list.RedirectIP)
+			if !ok {
+				invalidSkipped++
+				continue
+			}
+			for _, line := range lines {
+				builder.WriteString(line)
+			}
+			emitted++
 		}
 	}
 
+	builder.WriteString(fmt.Sprintf(
+		"\n# zonas emitidas: %d | duplicadas ignoradas: %d | invalidas ignoradas: %d\n",
+		emitted, dupSkipped, invalidSkipped,
+	))
+
 	tmpPath := filepath.Join(generatedDir, "dns-block-portal.tmp")
 	currentPath := filepath.Join(generatedDir, currentFile)
-	backupPath := filepath.Join(generatedDir, "dns-block-portal-"+time.Now().Format("20060102-150405")+".conf")
+	backupDir := env("UNBOUND_BACKUP_DIR", filepath.Join(filepath.Dir(generatedDir), "backups"))
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return "", "", "", err
+	}
+	backupPath := filepath.Join(backupDir, "dns-block-portal-"+time.Now().Format("20060102-150405")+".conf")
 
 	if err := writeConfigFile(tmpPath, []byte(builder.String())); err != nil {
 		return "", "", "", err
@@ -219,6 +243,54 @@ func renderAndApply(db *gorm.DB, mock bool) (string, string, string, error) {
 		return currentPath, backupPath, string(reloadOut), fmt.Errorf("unbound-control reload failed: %w", err)
 	}
 	return currentPath, backupPath, string(reloadOut), nil
+}
+
+var unboundZonePattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\.$`)
+
+func sanitizeUnboundZoneName(raw string) string {
+	zone := strings.TrimSpace(strings.Trim(raw, "\r"))
+	zone = strings.TrimPrefix(zone, "\ufeff")
+	zone = strings.Map(func(r rune) rune {
+		switch r {
+		case '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff':
+			return -1
+		default:
+			return r
+		}
+	}, zone)
+	zone = strings.ToLower(zone)
+	if !strings.HasSuffix(zone, ".") {
+		zone += "."
+	}
+	if !unboundZonePattern.MatchString(zone) {
+		return ""
+	}
+	if strings.ContainsAny(zone, "\"'\n\r\t\\") {
+		return ""
+	}
+	return zone
+}
+
+func unboundLinesForZone(zone, dnsAction, redirectIP string) ([]string, bool) {
+	switch dnsAction {
+	case "ALWAYS_NXDOMAIN":
+		return []string{fmt.Sprintf("local-zone: \"%s\" always_nxdomain\n", zone)}, true
+	case "ALWAYS_NULL":
+		return []string{fmt.Sprintf("local-zone: \"%s\" always_null\n", zone)}, true
+	case "REFUSE":
+		return []string{fmt.Sprintf("local-zone: \"%s\" refuse\n", zone)}, true
+	case "REDIRECT":
+		ip := strings.TrimSpace(redirectIP)
+		if net.ParseIP(ip) == nil {
+			return nil, false
+		}
+		return []string{
+			fmt.Sprintf("local-zone: \"%s\" redirect\n", zone),
+			fmt.Sprintf("local-data: \"%s A %s\"\n", zone, ip),
+		}, true
+	default:
+		return nil, false
+	}
 }
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
