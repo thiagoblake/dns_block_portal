@@ -44,6 +44,18 @@ func Connect(dsn string) (*gorm.DB, error) {
 }
 
 func ensureRevocationBatchSchema(db *gorm.DB) error {
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'revocation_batches'
+		)`).Scan(&exists).Error; err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS revocation_batches (
 			id UUID PRIMARY KEY,

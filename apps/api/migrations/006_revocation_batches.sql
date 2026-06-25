@@ -34,3 +34,9 @@ CREATE INDEX IF NOT EXISTS idx_revocation_batch_items_match ON revocation_batch_
 
 ALTER TABLE revocation_requests
   ADD COLUMN IF NOT EXISTS revocation_batch_id UUID REFERENCES revocation_batches(id);
+
+-- Garante que a API (usuario dnsblock) possa usar as tabelas em producao.
+ALTER TABLE revocation_batches OWNER TO dnsblock;
+ALTER TABLE revocation_batch_items OWNER TO dnsblock;
+GRANT ALL PRIVILEGES ON TABLE revocation_batches TO dnsblock;
+GRANT ALL PRIVILEGES ON TABLE revocation_batch_items TO dnsblock;
