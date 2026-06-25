@@ -20,6 +20,7 @@ type NavItem = {
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", roles: ["ADMIN", "OPERADOR", "AUDITOR"] },
   { href: "/block-lists", label: "Listas de bloqueio", roles: ["ADMIN", "OPERADOR", "AUDITOR"] },
+  { href: "/revocation-batches", label: "Revogação em lote", roles: ["ADMIN", "OPERADOR", "AUDITOR"] },
   { href: "/revocation-requests", label: "Revogações", roles: ["ADMIN", "OPERADOR", "AUDITOR"] },
   { href: "/users", label: "Usuários", roles: ["ADMIN"] },
   { href: "/audit-logs", label: "Auditoria", roles: ["ADMIN", "AUDITOR"] },

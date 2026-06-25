@@ -80,7 +80,14 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-900">Próximos passos</p>
                   <p className="text-sm text-slate-600">
-                    Revogações unitárias ou de lista passam pela fila em <strong>Revogações</strong>.
+                    <Link href="/revocation-batches" className="font-medium text-blue-600 hover:underline">
+                      Revogação em lote
+                    </Link>
+                    {" — "}upload de lista para localizar e revogar domínios em várias listas. Revogações unitárias seguem em{" "}
+                    <Link href="/revocation-requests" className="font-medium text-blue-600 hover:underline">
+                      Revogações
+                    </Link>
+                    .
                   </p>
                 </div>
                 <Link

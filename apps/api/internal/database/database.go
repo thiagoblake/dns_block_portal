@@ -22,6 +22,8 @@ func Connect(dsn string) (*gorm.DB, error) {
 		&models.BlockList{},
 		&models.BlockedDomain{},
 		&models.RevocationRequest{},
+		&models.RevocationBatch{},
+		&models.RevocationBatchItem{},
 		&models.UploadedFile{},
 		&models.ApplyRun{},
 		&models.AuditLog{},

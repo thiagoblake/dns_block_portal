@@ -82,6 +82,33 @@ func NewRouter(handler *handlers.Handler, frontendURL, jwtSecret string) *gin.En
 			revocation.POST("/:id/reject", middleware.RequireRoles(models.RoleAdmin), handler.RejectRevocationRequest)
 		}
 
+		revBatches := protected.Group("/revocation-batches")
+		{
+			revBatches.GET("", handler.ListRevocationBatches)
+			revBatches.GET("/:id", handler.GetRevocationBatch)
+			revBatches.GET("/:id/items", handler.ListRevocationBatchItems)
+			revBatches.POST("/preview", handler.PreviewRevocationBatchDomains)
+
+			revWrite := revBatches.Group("")
+			revWrite.Use(middleware.RequireRoles(models.RoleAdmin, models.RoleOperator))
+			{
+				revWrite.POST("", handler.CreateRevocationBatch)
+				revWrite.PUT("/:id", handler.UpdateRevocationBatch)
+				revWrite.POST("/:id/submit", handler.SubmitRevocationBatch)
+				revWrite.POST("/:id/upload", handler.UploadRevocationBatchDomains)
+				revWrite.POST("/:id/domains/bulk", handler.BulkRevocationBatchDomains)
+				revWrite.POST("/:id/rematch", handler.RematchRevocationBatch)
+			}
+
+			revAdmin := revBatches.Group("")
+			revAdmin.Use(middleware.RequireRoles(models.RoleAdmin))
+			{
+				revAdmin.DELETE("/:id", handler.DeleteRevocationBatch)
+				revAdmin.POST("/:id/approve", handler.ApproveRevocationBatch)
+				revAdmin.POST("/:id/reject", handler.RejectRevocationBatch)
+			}
+		}
+
 		protected.DELETE("/domains/:id", middleware.RequireRoles(models.RoleAdmin, models.RoleOperator), handler.DeleteDomain)
 		protected.POST("/domains/normalize-preview", handler.NormalizePreview)
 

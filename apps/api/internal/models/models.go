@@ -97,18 +97,71 @@ const (
 
 // RevocationRequest solicitação de revogação (lista inteira ou domínio unitário), com aprovação.
 type RevocationRequest struct {
-	ID              uuid.UUID               `gorm:"type:uuid;primaryKey" json:"id"`
-	Kind            RevocationKind          `json:"kind"`
-	BlockListID     uuid.UUID               `gorm:"type:uuid;index" json:"block_list_id"`
-	BlockedDomainID *uuid.UUID              `gorm:"type:uuid;index" json:"blocked_domain_id"`
-	Status          RevocationRequestStatus `gorm:"index" json:"status"`
-	Reason          string                  `json:"reason"`
-	RejectReason    string                  `json:"reject_reason"`
-	RequestedBy     uuid.UUID               `gorm:"type:uuid" json:"requested_by"`
-	ApprovedBy      *uuid.UUID              `gorm:"type:uuid" json:"approved_by"`
-	CreatedAt       time.Time               `json:"created_at"`
-	UpdatedAt       time.Time               `json:"updated_at"`
-	ApprovedAt      *time.Time              `json:"approved_at"`
+	ID                  uuid.UUID               `gorm:"type:uuid;primaryKey" json:"id"`
+	Kind                RevocationKind          `json:"kind"`
+	BlockListID         uuid.UUID               `gorm:"type:uuid;index" json:"block_list_id"`
+	BlockedDomainID     *uuid.UUID              `gorm:"type:uuid;index" json:"blocked_domain_id"`
+	RevocationBatchID   *uuid.UUID              `gorm:"type:uuid;index" json:"revocation_batch_id,omitempty"`
+	Status              RevocationRequestStatus `gorm:"index" json:"status"`
+	Reason              string                  `json:"reason"`
+	RejectReason        string                  `json:"reject_reason"`
+	RequestedBy         uuid.UUID               `gorm:"type:uuid" json:"requested_by"`
+	ApprovedBy          *uuid.UUID              `gorm:"type:uuid" json:"approved_by"`
+	CreatedAt           time.Time               `json:"created_at"`
+	UpdatedAt           time.Time               `json:"updated_at"`
+	ApprovedAt          *time.Time              `json:"approved_at"`
+}
+
+type RevocationBatchStatus string
+
+const (
+	RevocationBatchDraft           RevocationBatchStatus = "DRAFT"
+	RevocationBatchPendingApproval RevocationBatchStatus = "PENDING_APPROVAL"
+	RevocationBatchApproved        RevocationBatchStatus = "APPROVED"
+	RevocationBatchApplied         RevocationBatchStatus = "APPLIED"
+	RevocationBatchRejected        RevocationBatchStatus = "REJECTED"
+)
+
+type RevocationBatchMatchStatus string
+
+const (
+	RevocationMatchInvalid        RevocationBatchMatchStatus = "INVALID"
+	RevocationMatchNotFound       RevocationBatchMatchStatus = "NOT_FOUND"
+	RevocationMatchAlreadyRevoked RevocationBatchMatchStatus = "ALREADY_REVOKED"
+	RevocationMatchPending        RevocationBatchMatchStatus = "PENDING_REVOCATION"
+	RevocationMatchMatched        RevocationBatchMatchStatus = "MATCHED"
+)
+
+// RevocationBatch lote de revogação por upload (fluxo similar às listas de bloqueio).
+type RevocationBatch struct {
+	ID            uuid.UUID             `gorm:"type:uuid;primaryKey" json:"id"`
+	Title         string                `json:"title"`
+	SourceType    string                `json:"source_type"`
+	ProcessNumber string                `json:"process_number"`
+	Description   string                `json:"description"`
+	Reason        string                `json:"reason"`
+	Status        RevocationBatchStatus `gorm:"index" json:"status"`
+	RejectReason  string                `json:"reject_reason"`
+	CreatedBy     uuid.UUID             `gorm:"type:uuid" json:"created_by"`
+	ApprovedBy    *uuid.UUID            `gorm:"type:uuid" json:"approved_by"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
+	SubmittedAt   *time.Time            `json:"submitted_at"`
+	ApprovedAt    *time.Time            `json:"approved_at"`
+	AppliedAt     *time.Time            `json:"applied_at"`
+}
+
+type RevocationBatchItem struct {
+	ID               uuid.UUID                  `gorm:"type:uuid;primaryKey" json:"id"`
+	RevocationBatchID uuid.UUID                 `gorm:"type:uuid;index" json:"revocation_batch_id"`
+	OriginalValue    string                     `json:"original_value"`
+	NormalizedDomain string                     `gorm:"index" json:"normalized_domain"`
+	MatchStatus      RevocationBatchMatchStatus `gorm:"index" json:"match_status"`
+	ValidationError  string                     `json:"validation_error"`
+	BlockedDomainID  *uuid.UUID                 `gorm:"type:uuid;index" json:"blocked_domain_id"`
+	BlockListID      *uuid.UUID                 `gorm:"type:uuid" json:"block_list_id"`
+	BlockListTitle   string                     `json:"block_list_title"`
+	CreatedAt        time.Time                  `json:"created_at"`
 }
 
 type UploadedFile struct {
