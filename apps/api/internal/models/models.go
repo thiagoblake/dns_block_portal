@@ -151,18 +151,22 @@ type RevocationBatch struct {
 	AppliedAt     *time.Time            `json:"applied_at"`
 }
 
+func (RevocationBatch) TableName() string { return "revocation_batches" }
+
 type RevocationBatchItem struct {
-	ID               uuid.UUID                  `gorm:"type:uuid;primaryKey" json:"id"`
-	RevocationBatchID uuid.UUID                 `gorm:"type:uuid;index" json:"revocation_batch_id"`
-	OriginalValue    string                     `json:"original_value"`
-	NormalizedDomain string                     `gorm:"index" json:"normalized_domain"`
-	MatchStatus      RevocationBatchMatchStatus `gorm:"index" json:"match_status"`
-	ValidationError  string                     `json:"validation_error"`
-	BlockedDomainID  *uuid.UUID                 `gorm:"type:uuid;index" json:"blocked_domain_id"`
-	BlockListID      *uuid.UUID                 `gorm:"type:uuid" json:"block_list_id"`
-	BlockListTitle   string                     `json:"block_list_title"`
-	CreatedAt        time.Time                  `json:"created_at"`
+	ID                uuid.UUID                  `gorm:"type:uuid;primaryKey" json:"id"`
+	RevocationBatchID uuid.UUID                  `gorm:"type:uuid;index" json:"revocation_batch_id"`
+	OriginalValue     string                     `json:"original_value"`
+	NormalizedDomain  string                     `gorm:"index" json:"normalized_domain"`
+	MatchStatus       RevocationBatchMatchStatus `gorm:"index" json:"match_status"`
+	ValidationError   string                     `json:"validation_error"`
+	BlockedDomainID   *uuid.UUID                 `gorm:"type:uuid;index" json:"blocked_domain_id"`
+	BlockListID       *uuid.UUID                 `gorm:"type:uuid" json:"block_list_id"`
+	BlockListTitle    string                     `json:"block_list_title"`
+	CreatedAt         time.Time                  `json:"created_at"`
 }
+
+func (RevocationBatchItem) TableName() string { return "revocation_batch_items" }
 
 type UploadedFile struct {
 	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
